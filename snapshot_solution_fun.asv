@@ -1,0 +1,159 @@
+%% This is a subrutine for extraction of a snapshot solution of
+%% skin-friction feild from a pair of GLOF images
+
+function [tor_x,tor_y]=snapshot_solution_fun(I1,I2,lambda_1,lambda_2,scale_im,size_filter,No_iteration)
+
+
+% I1=imread('GRS_region1.tif');
+% I2=imread('GRS_region2.tif');
+% 
+%I1=rgb2gray(I1);
+%I2=rgb2gray(I2);
+
+
+% Im1=double(Im1);
+% Im2=double(Im2);
+% 
+% imshow(uint8(Im1));
+% % % select a region for optical flow calculation
+% xy=ginput(2);
+% x1=floor(min(xy(:,1)));
+% x2=floor(max(xy(:,1)));
+% y1=floor(min(xy(:,2)));
+% y2=floor(max(xy(:,2)));
+% I1=double(Im1(y1:y2,x1:x2)); 
+% I2=double(Im2(y1:y2,x1:x2));
+
+I1_original=I1;
+I2_original=I2;
+
+% pre-processing for reducing local change of illumination level and random noise,
+% and downsampling images if displacements are large
+
+size_average=0; % pixels, To bypass the correction for illumination change, set size_average = 0
+%level_wavelet=1; % 0 = no downsampling, 1 = downsampling by 2, 2 = downsampling by 2^2=4
+%size_filter=6; % in pixels
+
+%[I1,I2] = pre_processing(I1,I2,size_average,level_wavelet,size_filter);
+[I1,I2] = pre_processing_a(I1,I2,scale_im,size_filter);
+
+I_region1=I1;
+I_region2=I2;
+
+% figure(10);
+% clims=[1 250];
+% imagesc(uint8(I_region1),clims);
+% colormap('gray')
+% axis('image')
+% title('Image 1');
+% figure(20);
+% imagesc(uint8(I_region2),clims);
+% colormap('gray')
+% axis('image')
+% title('Image 2');
+
+
+% initial optical flow calculation
+%lambda_1=20; % Lagrange multiplier for initial estimation
+%lambda_2=2000; % Lagrange multiplier for refined estimation
+
+[ux0,uy0,vor,ux_horn,uy_horn,error1]=OpticalFlowPhysics_fun(I_region1,I_region2,lambda_1,lambda_2);
+% ux is the velocity (pixels/unit time) in the image x-coordinate (from the left-up corner to right)
+% uy is the velocity (pixels/unit time) in the image y-coordinate (from the left-up corner to bottom)
+
+
+% generate the shifted image from Im1 based on the initial velocity field (ux0, uy0),
+% and then calculate velocity difference for iterative correction
+Im1=uint8(I1_original);
+Im2=uint8(I2_original);
+
+ux_corr=ux0;
+uy_corr=uy0;
+
+%No_iteration=0; % The number of iterations in the coarse-to-fine iterative process
+k=1;
+while k<=No_iteration
+    [Im1_shift,uxI,uyI]=shift_image_fun_refine(ux_corr,uy_corr,Im1,Im2,5);
+
+    mask_size=2;
+    std=1;
+    H1=fspecial('gaussian',mask_size,std);
+    I1=imfilter(Im1_shift,H1);
+    I2=imfilter(Im2,H1);
+
+    I1=double(I1);
+    I2=double(I2);
+    
+    % normalize the intensity for I2 to eliminate the change of illumination light
+    N=30; % size for averaging
+    h=ones(N,N)/(N*N);
+    I12F=filter2(h,I1)-filter2(h,I2);
+    I2=I2+I12F;
+    
+    % calculation of correction of the optical flow 
+    [dux,duy,vor,dux_horn,duy_horn,error2]=OpticalFlowPhysics_fun(I1,I2,lambda_1,lambda_2);
+
+    % refined optical flow
+    ux_corr=uxI+dux;
+    uy_corr=uyI+duy;
+    k=k+1;
+end
+
+g=(I1+I2)/2;
+tor_x=ux_corr./g;
+tor_y=uy_corr./g;
+
+
+% % plot initial velocity vector field and streamlines
+% figure(2);
+% gx=30; offset=1;
+% h = vis_flow (ux, uy, gx, offset, 3, 'm');
+% set(h, 'Color', 'red');
+% xlabel('x (pixels)');
+% ylabel('y (pixels)');
+% axis image;
+% set(gca,'YDir','reverse');
+% title('Initial Velocity Field');
+% 
+% 
+% % plot streamlines
+% figure(3);
+% [m,n]=size(ux0);
+% [x,y]=meshgrid(1:n,1:m);
+% dn=10;
+% dm=10;
+% [sx,sy]=meshgrid(1:dn:n,1:dm:m);
+% %h=streamline(x, y, ux, uy, sx, sy);
+% h=streamslice(x, y, ux, uy, 4);
+% set(h, 'Color', 'blue');
+% xlabel('x (pixels)');
+% ylabel('y (pixels)');
+% axis image;
+% set(gca,'YDir','reverse');
+% title('Initial Streamlines');
+% 
+% u_mag0=(ux.^2+uy.^2).^0.5;
+% % plot velocity magnitude field
+% figure(4);
+% imagesc(u_mag0);
+% xlabel('x (pixels)');
+% ylabel('y (pixels)');
+% axis image;
+% set(gca,'YDir','reverse');
+% title('Initial Velocity Magnitude Field');
+% 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
